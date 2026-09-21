@@ -1,0 +1,44 @@
+function P = DeltaHedgingAS(K,r,sigma,T,Paths)
+[NRepl,NStepsPlus1] = size(Paths);
+n = NStepsPlus1 - 1;
+dt = T/n;
+Cost = zeros(NRepl,1);
+DiscountFactors = exp(-r*(0:n)*dt);
+FuturePaths = Paths(:,2:NStepsPlus1);
+LogPaths = log(FuturePaths);
+CumLogSum = cumsum(LogPaths,2);
+t_steps = 1:n;
+RunningAverage = exp(CumLogSum ./ t_steps);
+for i=1:NRepl
+    Path = Paths(i,:);
+    CashFlows = zeros(1,n+1);
+    Scurr = Path(1);
+    n_remain = n;
+    tau = T;
+    sigma_star = sigma * sqrt((n_remain+1)*(2*n_remain+1)/(6*n_remain^2));
+    b_star = (r-0.5*sigma^2)*(n_remain+1)/(2*n_remain) + 0.5*sigma_star^2;
+    d1 = (log(Scurr/K) + (b_star + 0.5*sigma_star^2)*tau) / (sigma_star*sqrt(tau));
+    Delta = exp((b_star-r)*tau) * normcdf(d1);
+    CashFlows(1) = -Delta * Scurr;
+    Position = Delta;
+    for j=1:n-1
+        tau = T - j*dt;
+        m = j;             
+        n_remain = n - m; 
+        Acurr = RunningAverage(i,j);
+        Scurr = Path(j+1);
+        Keff = (K / (Acurr^(m/n)))^(n/n_remain); 
+        sigma_star = sigma * sqrt((n_remain+1)*(2*n_remain+1)/(6*n_remain^2));
+        b_star = (r-0.5*sigma^2)*(n_remain+1)/(2*n_remain) + 0.5*sigma_star^2;
+        d1 = (log(Scurr/Keff) + (b_star + 0.5*sigma_star^2)*tau) / (sigma_star*sqrt(tau));
+        NewDelta = (n_remain / n) * exp((b_star-r)*tau) * normcdf(d1);
+        CashFlows(j+1) = (Position - NewDelta) * Scurr;
+        Position = NewDelta;
+    end
+    GT = RunningAverage(i,n);
+    Payoff = max(GT - K, 0);
+    CashFlows(n+1) = Position * Path(NStepsPlus1) - Payoff;  
+    Cost(i) = -dot(CashFlows, DiscountFactors);
+end
+P = mean(Cost);
+end
